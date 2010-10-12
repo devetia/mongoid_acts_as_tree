@@ -25,6 +25,7 @@ Gem::Specification.new do |s|
      "Rakefile",
      "VERSION",
      "lib/mongoid_acts_as_tree.rb",
+     "locomotive_mongoid_acts_as_tree.gemspec",
      "mongoid_acts_as_tree.gemspec",
      "test/helper.rb",
      "test/models/category.rb",

@@ -1,23 +1,15 @@
 require 'rubygems'
 require 'rake'
+require 'rake/gempackagetask'
 
-begin
-  require 'jeweler'
-  Jeweler::Tasks.new do |gem|
-    gem.name = "locomotive_mongoid_acts_as_tree"
-    gem.summary = %Q{ActsAsTree plugin for Mongoid}
-    gem.description = %Q{Port of the old, venerable ActsAsTree with a bit of a twist}
-    gem.email = ["saksmlz@gmail.com", "didier@nocoffee.fr"]
-    gem.homepage = "http://github.com/saks/mongoid_acts_as_tree"
-    gem.authors = ["Jakob Vidmar, Aliaksandr Rahalevich"]
-    gem.add_dependency("mongoid", "<= 2.0.0.beta.19")
-    gem.add_dependency("bson", ">= 0.20.1")
+gemspec = eval(File.read('locomotive_mongoid_acts_as_tree.gemspec'))
+Rake::GemPackageTask.new(gemspec) do |pkg|
+  pkg.gem_spec = gemspec
+end
 
-    gem.add_development_dependency "shoulda", ">=2.10.2"
-  end
-#  Jeweler::GemcutterTasks.new
-rescue LoadError
-  puts "Jeweler (or a dependency) not available. Install it with: gem install jeweler"
+desc "build the gem and release it to rubygems.org"
+task :release => :gem do
+  sh "gem push pkg/locomotive_mongoid_acts_as_tree-#{gemspec.version}.gem"
 end
 
 require 'rake/testtask'
