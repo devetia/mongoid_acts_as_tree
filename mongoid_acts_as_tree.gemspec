@@ -4,14 +4,14 @@
 # -*- encoding: utf-8 -*-
 
 Gem::Specification.new do |s|
-  s.name = %q{locomotive_mongoid_acts_as_tree}
+  s.name = %q{mongoid_acts_as_tree}
   s.version = "0.1.5.1"
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Jakob Vidmar, Aliaksandr Rahalevich"]
-  s.date = %q{2010-07-05}
+  s.date = %q{2010-10-13}
   s.description = %q{Port of the old, venerable ActsAsTree with a bit of a twist}
-  s.email = %q{saksmlz@gmail.com, didier@nocoffee.fr}
+  s.email = ["saksmlz@gmail.com", "didier@nocoffee.fr"]
   s.extra_rdoc_files = [
     "LICENSE",
      "README.rdoc"
@@ -38,10 +38,10 @@ Gem::Specification.new do |s|
   s.rubygems_version = %q{1.3.7}
   s.summary = %q{ActsAsTree plugin for Mongoid}
   s.test_files = [
-    "test/test_order.rb",
-     "test/models/ordered_category.rb",
+    "test/helper.rb",
      "test/models/category.rb",
-     "test/helper.rb",
+     "test/models/ordered_category.rb",
+     "test/test_order.rb",
      "test/test_tree.rb"
   ]
 
@@ -50,16 +50,16 @@ Gem::Specification.new do |s|
     s.specification_version = 3
 
     if Gem::Version.new(Gem::VERSION) >= Gem::Version.new('1.2.0') then
-      s.add_runtime_dependency(%q<mongoid>, ["<= 2.0.0"])
+      s.add_runtime_dependency(%q<mongoid>, ["<= 2.0.0.beta.19"])
       s.add_runtime_dependency(%q<bson>, [">= 0.20.1"])
       s.add_development_dependency(%q<shoulda>, [">= 2.10.2"])
     else
-      s.add_dependency(%q<mongoid>, ["<= 2.0.0"])
+      s.add_dependency(%q<mongoid>, ["<= 2.0.0.beta.19"])
       s.add_dependency(%q<bson>, [">= 0.20.1"])
       s.add_dependency(%q<shoulda>, [">= 2.10.2"])
     end
   else
-    s.add_dependency(%q<mongoid>, ["<= 2.0.0"])
+    s.add_dependency(%q<mongoid>, ["<= 2.0.0.beta.19"])
     s.add_dependency(%q<bson>, [">= 0.20.1"])
     s.add_dependency(%q<shoulda>, [">= 2.10.2"])
   end
