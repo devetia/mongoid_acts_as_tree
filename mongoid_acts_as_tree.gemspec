@@ -4,14 +4,14 @@
 # -*- encoding: utf-8 -*-
 
 Gem::Specification.new do |s|
-  s.name = %q{mongoid_acts_as_tree}
-  s.version = "0.1.5"
+  s.name = %q{locomotive_mongoid_acts_as_tree}
+  s.version = "0.1.5.1"
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Jakob Vidmar, Aliaksandr Rahalevich"]
   s.date = %q{2010-07-05}
   s.description = %q{Port of the old, venerable ActsAsTree with a bit of a twist}
-  s.email = %q{saksmlz@gmail.com}
+  s.email = %q{saksmlz@gmail.com, didier@nocoffee.fr}
   s.extra_rdoc_files = [
     "LICENSE",
      "README.rdoc"
