@@ -33,7 +33,10 @@ module Mongoid
             define_method "#{parent_id_field}=" do | new_parent_id |
               if new_parent_id.present?
                 new_parent = self.class.find new_parent_id
-                new_parent.children.push self, false
+
+                if new_parent != self.parent # FIXME (Didier): useless when the parent remains the same
+                  new_parent.children.push self, false
+                end
               else
                 self.write_attribute parent_id_field, nil
                 self[path_field] = []
@@ -131,9 +134,9 @@ module Mongoid
         alias replace children=
 
         def descendants
-          # workorund for mongoid unexpected behavior
-          _new_record_var = self.instance_variable_get(:@new_record)
-          _new_record = _new_record_var != false
+          # # work around for mongoid unexpected behavior
+          # _new_record_var = self.instance_variable_get(:@new_record)
+          # _new_record = _new_record_var != false
 
           return [] if _new_record
           self.class.all_in(path_field => [self._id]).order_by tree_order
