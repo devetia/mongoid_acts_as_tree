@@ -1,3 +1,8 @@
+*0.1.5 (June 17th, 2011)*
+* Added scoped trees
+* Added callbacks for move and unlink
+* Added Tests for callbacks and scope
+
 *0.1.4 (July 5th 2010)*
 *parent_id attribute accessor acts as expected
 

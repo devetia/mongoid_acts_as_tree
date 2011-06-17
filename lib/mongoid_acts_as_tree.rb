@@ -17,6 +17,10 @@ module Mongoid
             :depth_field     => "depth"
           }.merge(options)
 
+          if options[:scope].is_a?(Symbol) && options[:scope].to_s !~ /_id$/
+            options[:scope] = "#{options[:scope]}_id".intern
+          end
+
           write_inheritable_attribute :acts_as_tree_options, options
           class_inheritable_reader :acts_as_tree_options
 
@@ -48,6 +52,9 @@ module Mongoid
           after_save      :move_children
           validate        :will_save_tree
           before_destroy  :destroy_descendants
+          
+          define_callbacks  :move, :terminator => "result==false"
+          define_callbacks  :unlink, :terminator => "result==false"          
         end
       end
 
@@ -76,6 +83,10 @@ module Mongoid
           if @_cyclic
             errors.add(:base, "Can't be children of a descendant")
           end
+          
+          if @_scope_missmatch
+            errors.add(:base, 'Child and Parent must be within same scope')
+          end          
         end
 
         def fix_position
@@ -181,6 +192,12 @@ module Mongoid
         def destroy_descendants
           self.descendants.each &:destroy
         end
+        
+        def same_scope?(other)
+          Array(tree_scope).all? do |attr|
+            self.send(attr) == other.send(attr)
+          end
+        end        
       end
 
       #proxy class
@@ -196,15 +213,19 @@ module Mongoid
         def <<(object, will_save=true)
           if object.descendants.include? @parent
             object.instance_variable_set :@_cyclic, true
+					elsif !@parent.same_scope?(object)
+					  object.instance_variable_set :@_scope_missmatch, true            
           else
-            object.write_attribute object.parent_id_field, @parent._id
-            object[object.path_field] = @parent[@parent.path_field] + [@parent._id]
-            object[object.depth_field] = @parent[@parent.depth_field] + 1
-            object.instance_variable_set :@_will_move, true
-            object.save if will_save
+            object.run_callbacks :move do
+              object.write_attribute object.parent_id_field, @parent._id
+              object[object.path_field] = @parent[@parent.path_field] + [@parent._id]
+              object[object.depth_field] = @parent[@parent.depth_field] + 1
+              object.instance_variable_set :@_will_move, true
+              object.save if will_save
+              
+              super(object)
+            end
           end
-
-          super(object)
         end
 
         def build(attributes)
@@ -227,12 +248,14 @@ module Mongoid
               object_or_id
           end
 
-          object.write_attribute object.parent_id_field, nil
-          object[object.path_field]      = []
-          object[object.depth_field]     = 0
-          object.save
+          object.run_callbacks :unlink do 
+            object.write_attribute object.parent_id_field, nil
+            object[object.path_field]      = []
+            object[object.depth_field]     = 0
+            object.save
 
-          super(object)
+            super(object)
+          end
         end
 
         #Clear children list
@@ -267,6 +290,10 @@ module Mongoid
         def tree_order
           acts_as_tree_options[:order] or []
         end
+        
+        def tree_scope
+          acts_as_tree_options[:scope] or nil
+        end        
       end
     end
   end
