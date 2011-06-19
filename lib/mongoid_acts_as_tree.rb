@@ -210,7 +210,7 @@ module Mongoid
           if klass.superclass == Object || !klass.include?(Mongoid::Document)
             klass
           else
-            _base_class(klass)
+            _base_class(klass.superclass)
           end
         end
       end
