@@ -36,7 +36,7 @@ module Mongoid
           self.class_eval do
             define_method "#{parent_id_field}=" do | new_parent_id |
               if new_parent_id.present?
-                new_parent = self.class.find new_parent_id
+                new_parent = self.base_class.find new_parent_id
 
                 if new_parent != self.parent # FIXME (Didier): useless when the parent remains the same
                   new_parent.children.push self, false
@@ -103,7 +103,7 @@ module Mongoid
         end
 
         def parent
-          @_parent or (self[parent_id_field].nil? ? nil : self.class.find(self[parent_id_field]))
+          @_parent or (self[parent_id_field].nil? ? nil : self.base_class.find(self[parent_id_field]))
         end
 
         def root?
@@ -111,12 +111,12 @@ module Mongoid
         end
 
         def root
-          self[path_field].first.nil? ? self : self.class.find(self[path_field].first)
+          self[path_field].first.nil? ? self : self.base_class.find(self[path_field].first)
         end
 
         def ancestors
           return [] if root?
-          self.class.where(:_id.in => self[path_field]).order_by(depth_field)
+          self.base_class.where(:_id.in => self[path_field]).order_by(depth_field)
         end
 
         def self_and_ancestors
@@ -124,11 +124,11 @@ module Mongoid
         end
 
         def siblings
-          self.class.where(:_id.ne => self._id, parent_id_field => self[parent_id_field]).order_by tree_order
+          self.base_class.where(:_id.ne => self._id, parent_id_field => self[parent_id_field]).order_by tree_order
         end
 
         def self_and_siblings
-          self.class.where(parent_id_field => self[parent_id_field]).order_by tree_order
+          self.base_class.where(parent_id_field => self[parent_id_field]).order_by tree_order
         end
 
         def children
@@ -146,7 +146,7 @@ module Mongoid
 
         def descendants
           return [] if new_record?
-          self.class.all_in(path_field => [self._id]).order_by tree_order
+          self.base_class.all_in(path_field => [self._id]).order_by tree_order
         end
 
         def self_and_descendants
@@ -198,6 +198,21 @@ module Mongoid
             self.send(attr) == other.send(attr)
           end
         end        
+        
+        def base_class
+          _base_class(self.class)
+        end
+        
+        protected
+        
+        def _base_class(klass)
+          # return if super class is object or does not include Mongoid::Document
+          if klass.superclass == Object || !klass.include?(Mongoid::Document)
+            klass
+          else
+            _base_class(klass)
+          end
+        end
       end
 
       #proxy class
