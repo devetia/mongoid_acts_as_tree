@@ -19,6 +19,7 @@ class TestMongoidActsAsTree < Test::Unit::TestCase
       @root_1.children << @child_3
 
       @child_2.children << @child_2_1
+      
     end
 
    	should "should block scope missmatch" do

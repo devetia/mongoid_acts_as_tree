@@ -15,7 +15,7 @@ module Mongoid
             :parent_id_field => "parent_id",
             :path_field      => "path",
             :depth_field     => "depth",
-            :auto_save       => true
+            :autosave       => true
           }.merge(options)
 
           # set order to depth_field as default
@@ -31,16 +31,17 @@ module Mongoid
           write_inheritable_attribute :acts_as_tree_options, options
           class_inheritable_reader :acts_as_tree_options
 
-          include InstanceMethods
-          include Fields
           extend Fields
           extend ClassMethods
 
-          field path_field, :type => Array,  :default => [], :index => true
-          field depth_field, :type => Integer, :default => 0
-
           # build a relation
-          belongs_to  :parent, :class_name => self.base_class.to_s, :foreign_key => parent_id_field                  
+          belongs_to  :parent, :class_name => self.base_class.to_s, :foreign_key => parent_id_field
+          
+          include InstanceMethods
+          include Fields
+
+          field path_field, :type => Array,  :default => [], :index => true
+          field depth_field, :type => Integer, :default => 0                         
           
           self.class_eval do
             
@@ -273,7 +274,8 @@ module Mongoid
               object.write_attribute object.parent_id_field, @parent._id
               object.path = @parent.path + [@parent._id]
               object.depth = @parent.depth + 1
-              object.save if will_save
+              # only will_save == false will block autosave
+              object.save if will_save != false && object.tree_autosave 
             
               delta_depth  = object.depth - prev_depth
             
@@ -290,7 +292,8 @@ module Mongoid
                     # we need to adapt depth
                     c_desc.depth  = c_desc.depth + delta_depth
                     c_desc.path   = c_desc.path.slice(prev_depth, c_desc.path.length - prev_depth).unshift(*object.path)
-                    c_desc.save if will_save
+                    # only will_save == false will block autosave
+                    c_desc.save if will_save != false && object.tree_autosave 
                   end
                 end
               end
@@ -381,7 +384,7 @@ module Mongoid
         end        
         
         def tree_autosave
-          acts_as_tree_options[:auto_save]
+          acts_as_tree_options[:autosave]
         end
         
       end

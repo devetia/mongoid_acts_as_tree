@@ -191,15 +191,18 @@ class TestMongoidActsAsTree < Test::Unit::TestCase
           @child_2_1_1  = Category.create(:name => "Child 2.2")
 
           @child_3_1    = Category.create(:name => "Child 3.1")
+          @child_3_1_1  = Category.create(:name => "Child 3.1.1")
 
           @child_2_1.children << @child_2_1_1
           @child_3.children << @child_3_1       
+          @child_3_1.children << @child_3_1_1
         end
            
         should "recalculate path and depth" do
 					@child_2_1.children << @child_3
           # children have changed!
           @child_3_1.reload
+          @child_3_1_1.reload
           
           assert @child_2_1.is_or_is_ancestor_of?(@child_3)
           assert @child_3.is_or_is_descendant_of?(@child_2_1)
@@ -212,6 +215,7 @@ class TestMongoidActsAsTree < Test::Unit::TestCase
           # check if path is adapted correctly
           assert_equal @child_3.path, [@root_1._id, @child_2._id, @child_2_1._id]
           assert_equal @child_3_1.path, [@root_1._id, @child_2._id, @child_2_1._id, @child_3._id]
+          assert_equal @child_3_1_1.path, [@root_1._id, @child_2._id, @child_2_1._id, @child_3._id, @child_3_1._id]
           
         end
 
