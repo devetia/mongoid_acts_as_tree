@@ -127,24 +127,18 @@ module Mongoid
         end
 
         def ancestors
-          return [] if root? 
           self.base_class.where(:_id.in => self.path).order_by tree_order
         end
 
         def self_and_ancestors
-          return [self] if root?
           self.base_class.where(:_id.in => [self._id] + self.path).order_by tree_order
         end
 
         def siblings
-          # no siblings if new record and parent_id is nil! 
-          # otherwise the other roots would be returned
-          return [] if (new_record? && self.parent_id.nil?)
           self.base_class.where(:_id.ne => self._id, parent_id_field => self.parent_id).order_by tree_order
         end
 
         def self_and_siblings
-          return [self] if (new_record? && self.parent_id.nil?)
           self.base_class.where(parent_id_field => self.parent_id).order_by tree_order 
         end
 
@@ -162,12 +156,10 @@ module Mongoid
         alias replace children=
 
         def descendants
-          return [] if new_record?
           self.base_class.all_in(path_field => [self._id]).order_by tree_order
         end
 
         def self_and_descendants
-          return [self] if new_record?
           # new query to ensure tree order
           self.base_class.where({
             "$or" => [
@@ -214,8 +206,7 @@ module Mongoid
         def base_class
           self.class.base_class
         end
-        
-        
+                
         # setter and getters 
         
         def depth
@@ -252,10 +243,11 @@ module Mongoid
 
         #Add new child to list of object children
         def <<(object, will_save=true)
+          # TODO: Ensure integrity (optimistic / custom locking?)
           if !object.is_a?(Mongoid::Acts::Tree)
             raise NonTreeError, 'Child is not a kind of Mongoid::Acts::Tree'
           elsif !@parent.persisted?
-            raise UnsavedParentError, 'Cannot append child to unsaved parent'
+            raise UnsavedParentError, 'Cannot append child to unpersisted parent'
           elsif object.base_class != @parent.base_class
             # child and parent must share same base class
             raise BaseClassError, 'Parent and child must share same base class'
@@ -269,6 +261,8 @@ module Mongoid
             
             prev_depth  = object.depth
                         
+            # 1. parameter = is absolute move ?
+            # 2. parameter = parent             
             object.run_callbacks :move do
               
               object.write_attribute object.parent_id_field, @parent._id
@@ -285,9 +279,10 @@ module Mongoid
               prev_order = object.tree_order
               object.acts_as_tree_options[:order]  = [object.depth_field, :asc]
                 
-              # will not have any children if new record (unsaved parent)
+              # will not have any children if new record (unsaved parent condition)
               unless object.new_record?              
                 object.descendants.each do |c_desc|
+                  # maybe set parent nil, because there will be a lot of queries if there are many children!!
                   c_desc.run_callbacks :move do
                     # we need to adapt depth
                     c_desc.depth  = c_desc.depth + delta_depth
@@ -340,7 +335,7 @@ module Mongoid
 
           object.run_callbacks :unlink do 
             object.parent = nil
-            object.save
+            object.save if object.tree_autosave
 
             super(object)
           end

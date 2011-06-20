@@ -22,6 +22,7 @@ class UserTree
   end
   
   def custom_after_move
+    
   end
   
   
