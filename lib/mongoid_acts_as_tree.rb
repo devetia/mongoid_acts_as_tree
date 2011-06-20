@@ -257,7 +257,7 @@ module Mongoid
             raise CyclicError, 'Cyclic Tree Structure'
           elsif !@parent.same_scope?(object)
             # child and parent must be within the same scope
-            raise ScopeError, 'Child must be in the same scope as parent'    
+            raise ScopeError, 'Child must be in the same scope as parent'   
           else
             
             prev_depth  = object.depth
