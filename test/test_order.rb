@@ -21,14 +21,14 @@ class TestMongoidActsAsTree < Test::Unit::TestCase
 
     should "be in order" do
       assert_equal OrderedCategory.roots.to_a, [@root_2, @root_1]
-      assert_equal @root_1.children, [@child_1, @child_3, @child_2]
+      assert_equal @root_1.children.to_a, [@child_1, @child_3, @child_2]
 
-      assert_equal @root_1.descendants, [@child_1, @child_2_1, @child_3, @child_2]
-      assert_equal @root_1.self_and_descendants, [@child_1, @root_1, @child_2_1, @child_3, @child_2]
+      assert_equal @root_1.descendants.to_a, [@child_1, @child_2_1, @child_3, @child_2]
+      assert_equal @root_1.self_and_descendants.to_a, [@child_1, @root_1, @child_2_1, @child_3, @child_2]
 
-      assert_equal @child_2.siblings, [@child_1, @child_3]
-      assert_equal @child_2.self_and_siblings, [@child_1, @child_3, @child_2]
-      assert_equal @root_1.self_and_siblings, [@root_2, @root_1]
+      assert_equal @child_2.siblings.to_a, [@child_1, @child_3]
+      assert_equal @child_2.self_and_siblings.to_a, [@child_1, @child_3, @child_2]
+      assert_equal @root_1.self_and_siblings.to_a, [@root_2, @root_1]
     end
   end
 end

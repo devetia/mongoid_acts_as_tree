@@ -72,7 +72,8 @@ module Mongoid
           
           before_destroy  :destroy_descendants
           
-          define_callbacks  :move, :terminator => "result==false"
+          define_callbacks  :move_absolute, :terminator => "result==false"
+          define_callbacks  :move_relative, :terminator => "result==false"
           define_callbacks  :unlink, :terminator => "result==false"  
             
         end
@@ -229,15 +230,7 @@ module Mongoid
         def path=(new_path)
           write_attribute path_field, new_path
         end
-          
-          
-        def walk_descendants(&block)
-          self.children.each do |c_child|
-            block.call(c_child)
-            c_child.walk_descendants(block)
-          end
-        end
-            
+         
       end
 
       #proxy class
@@ -271,7 +264,7 @@ module Mongoid
                         
             # 1. parameter = is absolute move ?
             # 2. parameter = parent             
-            object.run_callbacks :move do
+            object.run_callbacks :move_absolute do
               
               object.write_attribute object.parent_id_field, @parent._id
               object.path = @parent.path + [@parent._id]
@@ -288,36 +281,17 @@ module Mongoid
               object.acts_as_tree_options[:order]  = [object.depth_field, :asc]
                 
               # will not have any children if new record (unsaved parent condition)
-            
-              unless object.new_record?
-                       
-                self.y { |this|
-                  lambda { |c_children|
-                    c_children.each do |c_child|
-                      c_child.run_callbacks :move do
-                        c_child.depth  = c_child.depth + delta_depth
-                        c_child.path   = c_child.path.slice(prev_depth, c_child.path.length - prev_depth).unshift(*object.path)           
-                        # only will_save == false will block autosave
-                        c_child.save if will_save != false && object.tree_autosave 
-                        
-                        this.call(c_child.children)
-                      end
-                    end
-                  }
-                }.call(object.children)
-                
-                
-                      
-                #object.descendants.each do |c_desc|
+              unless object.new_record?                       
+                object.descendants.each do |c_desc|
                   # maybe set parent nil, because there will be a lot of queries if there are many children!!
-                  #c_desc.run_callbacks :move do
+                  c_desc.run_callbacks :move_relative do
                     # we need to adapt depth
-                    #c_desc.depth  = c_desc.depth + delta_depth
-                    #c_desc.path   = c_desc.path.slice(prev_depth, c_desc.path.length - prev_depth).unshift(*object.path)
+                    c_desc.depth  = c_desc.depth + delta_depth
+                    c_desc.path   = c_desc.path.slice(prev_depth, c_desc.path.length - prev_depth).unshift(*object.path)
                     # only will_save == false will block autosave
-                    #c_desc.save if will_save != false && object.tree_autosave 
-                  #end
-                #end
+                    c_desc.save if will_save != false && object.tree_autosave 
+                  end
+                end
               end
               
               # restore old order
@@ -373,14 +347,7 @@ module Mongoid
           self.each do | child |
             @parent.children.delete child
           end
-        end
-        
-        def y
-          lambda { |f| f.call(f) }.call(
-            lambda do |g|
-              yield(lambda { |*n| g.call(g).call(*n) })
-          end)
-        end         
+        end      
 
         private
 
