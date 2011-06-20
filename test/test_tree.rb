@@ -96,7 +96,7 @@ class TestMongoidActsAsTree < Test::Unit::TestCase
 		end
 
 		should "assign blank parent_id" do
-			@child_1.parent_id = ''
+			@child_1.parent_id = nil
 			@child_1.save
 
 			assert_nil @child_1.reload.parent_id
@@ -187,16 +187,32 @@ class TestMongoidActsAsTree < Test::Unit::TestCase
       end
 
       context "when moving" do
-        should "recalculate path and depth" do
-					@child_2.children << @child_3
-          @child_3.save
+        setup do
+          @child_2_1_1  = Category.create(:name => "Child 2.2")
 
-          assert @child_2.is_or_is_ancestor_of?(@child_3)
-          assert @child_3.is_or_is_descendant_of?(@child_2)
-          assert @child_2.children.include?(@child_3)
-          assert @child_2.descendants.include?(@child_3)
-          assert @child_2_1.is_or_is_sibling_of?(@child_3)
-          assert_equal 2, @child_3.depth
+          @child_3_1    = Category.create(:name => "Child 3.1")
+
+          @child_2_1.children << @child_2_1_1
+          @child_3.children << @child_3_1       
+        end
+           
+        should "recalculate path and depth" do
+					@child_2_1.children << @child_3
+          # children have changed!
+          @child_3_1.reload
+          
+          assert @child_2_1.is_or_is_ancestor_of?(@child_3)
+          assert @child_3.is_or_is_descendant_of?(@child_2_1)
+          assert @child_2_1.children.include?(@child_3)
+          assert @child_2_1.descendants.include?(@child_3)
+          assert @child_2_1_1.is_or_is_sibling_of?(@child_3)
+          assert_equal 3, @child_3.depth
+          assert_equal 4, @child_3_1.depth
+          
+          # check if path is adapted correctly
+          assert_equal @child_3.path, [@root_1._id, @child_2._id, @child_2_1._id]
+          assert_equal @child_3_1.path, [@root_1._id, @child_2._id, @child_2_1._id, @child_3._id]
+          
         end
 
         should "move children on save" do
@@ -210,8 +226,9 @@ class TestMongoidActsAsTree < Test::Unit::TestCase
         end
 
         should "check against cyclic graph" do
-          @child_2_1.children << @root_1
-          assert !@root_1.save
+          assert_raise Mongoid::Acts::Tree::CyclicError do 
+            @child_2_1.children << @root_1
+          end
         end
       end
 

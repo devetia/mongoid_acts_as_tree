@@ -14,11 +14,16 @@ class UserTree
   acts_as_tree :scope => :user_id  
   
   set_callback :move, :before, :custom_before_move
+  set_callback :move, :after, :custom_after_move
   set_callback :unlink, :before, :custom_before_unlink
   
   def custom_before_move
     return self.moveable
   end
+  
+  def custom_after_move
+  end
+  
   
   def custom_before_unlink
     return self.unlinkable

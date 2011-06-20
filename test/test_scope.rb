@@ -22,10 +22,10 @@ class TestMongoidActsAsTree < Test::Unit::TestCase
     end
 
    	should "should block scope missmatch" do
-   	  before = @root_2.children.size
    	  child  = UserTree.new(:name => 'Child 4', :user_id => 1234);
-   		@root_2.children << child
-			assert @root_2.children.size == before
+   	  assert_raise Mongoid::Acts::Tree::ScopeError do
+   		  @root_2.children << child
+		  end
 		end
 
   end
