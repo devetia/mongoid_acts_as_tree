@@ -54,17 +54,17 @@ module Mongoid
             def parent_with_checking=(new_parent)              
               if new_parent.present?
                 if new_parent != self.parent && new_parent.is_a?(Mongoid::Acts::Tree)
-                  # chain to original relation
-                  parent_without_checking=(new_parent)
                   self.write_attribute parent_id_field, new_parent.id
                   new_parent.children.push self, false
                 end
-              else
-                parent_without_checking=(nil)                
+              else             
                 self.write_attribute parent_id_field, nil
                 self.path = []
                 self.depth = 0
               end
+              
+              # chain to original relation
+              parent_without_checking=(new_parent)
             end
             
             # use advise-around pattern to intercept mongoid relation
@@ -290,7 +290,7 @@ module Mongoid
                     c_desc.depth  = c_desc.depth + delta_depth
                     c_desc.path   = c_desc.path.slice(prev_depth, c_desc.path.length - prev_depth).unshift(*object.path)
                     # only will_save == false will block autosave
-                    c_desc.save if will_save != false && object.tree_autosave 
+                    c_desc.save! if will_save != false && object.tree_autosave 
                   end
                 end
               end
