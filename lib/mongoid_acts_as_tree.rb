@@ -53,18 +53,20 @@ module Mongoid
             # overwrite parent=
             def parent_with_checking=(new_parent)              
               if new_parent.present?
+                # chain to original relation
+                parent_without_checking=(new_parent)
                 if new_parent != self.parent && new_parent.is_a?(Mongoid::Acts::Tree)
                   self.write_attribute parent_id_field, new_parent.id
                   new_parent.children.push self, false
                 end
               else             
+                # chain to original relation
+                parent_without_checking=(nil)
                 self.write_attribute parent_id_field, nil
                 self.path = []
                 self.depth = 0
               end
-              
-              # chain to original relation
-              parent_without_checking=(new_parent)
+
             end
             
             # use advise-around pattern to intercept mongoid relation
