@@ -35,7 +35,7 @@ module Mongoid
           extend ClassMethods
 
           # build a relation
-          belongs_to  :parent, :class_name => self.base_class.to_s, :foreign_key => parent_id_field
+          belongs_to  :parent, :class_name => self.base_class.to_s, :foreign_key => parent_id_field, :polymorphic => true
           
           include InstanceMethods
           include Fields
@@ -47,32 +47,36 @@ module Mongoid
             
             # overwrite parent_id_field=
             define_method "#{parent_id_field}=" do | new_parent_id |
+              return if self.send("#{parent_id_field}") == new_parent_id
               self.parent = new_parent_id.present? ? self.base_class.find(new_parent_id) : nil           
             end
             
             # overwrite parent=
-            def parent_with_checking=(new_parent)              
+            def parent_with_checking=(new_parent)    
               if new_parent.present?
                 # chain to original relation
-                parent_without_checking=(new_parent)
+                #parent_without_checking=(new_parent)
                 if new_parent != self.parent && new_parent.is_a?(Mongoid::Acts::Tree)
-                  self.write_attribute parent_id_field, new_parent.id
+                  #write_attribute parent_id_field, new_parent.id
+                  #@parent = new_parent
                   new_parent.children.push self, false
                 end
               else             
                 # chain to original relation
-                parent_without_checking=(nil)
+                #@parent = nil
+                parent_without_checking=(new_parent)
                 self.write_attribute parent_id_field, nil
                 self.path = []
                 self.depth = 0
               end
-
             end
-            
-            # use advise-around pattern to intercept mongoid relation
-            alias_method_chain  'parent=', :checking
-          end          
+
+            # use advise-around pattern to intercept mongoid relation            
+            alias_method_chain  :parent=, :checking
+          end
           
+          before_save     :before_save_tree
+          after_save      :after_save_tree
           before_destroy  :destroy_descendants
           
           define_callbacks  :move_absolute, :terminator => "result==false"
@@ -233,7 +237,52 @@ module Mongoid
         def path=(new_path)
           write_attribute path_field, new_path
         end
-         
+        
+        def before_save_tree
+          if self.send("#{parent_id_field}_changed?")
+            p "#{self.name} WILL MOVE!!"
+            @_will_move      = true
+            @_old_parent_id  = self.send("#{parent_id_field}_was")
+            @_old_path       = self.send("#{path_field}_was")
+          else
+            @_will_move   = false
+          end
+          
+          return true
+        end
+            
+        def after_save_tree
+
+          return unless @_will_move
+          
+          # get self and all descendants ordered by ascending depth
+          # temporary change tree_order
+          # TODO: Prevent changing tree order because it cause unexpected behaviour
+          prev_order = self.tree_order
+          self.acts_as_tree_options[:order]  = [self.depth_field, :asc]
+          
+          prev_depth   = @_old_path.length
+          delta_depth  = self.depth - prev_depth        
+            
+                  
+          self.descendants.each do |c_desc|
+            # maybe set parent nil, because there will be a lot of queries if there are many children!!
+            c_desc.run_callbacks :move_relative do
+              # we need to adapt depth
+              c_desc.depth  = c_desc.depth + delta_depth
+              c_desc.path   = c_desc.path.slice(prev_depth, c_desc.path.length - prev_depth).unshift(*self.path)
+              # only will_save == false will block autosave
+              c_desc.save
+            end
+          end
+          
+          # restore old order
+          self.acts_as_tree_options[:order] = prev_order
+          @_old_parent_id  = nil
+          @_old_path       = nil
+          @_will_move      = false
+        end
+    
       end
 
       #proxy class
@@ -255,52 +304,27 @@ module Mongoid
           elsif object.base_class != @parent.base_class
             # child and parent must share same base class
             raise BaseClassError, 'Parent and child must share same base class'
-          elsif !object.new_record? && object.descendants.include?(@parent)
+          elsif !object.new_record? && object.self_and_descendants.include?(@parent)
             # if record is new, it can't have any children (=> UnsavedParent)
             raise CyclicError, 'Cyclic Tree Structure'
           elsif !@parent.same_scope?(object)
             # child and parent must be within the same scope
             raise ScopeError, 'Child must be in the same scope as parent'   
           else
-            
-            prev_depth  = object.depth
-                        
+                                    
             # 1. parameter = is absolute move ?
-            # 2. parameter = parent             
+            # 2. parameter = parent         
             object.run_callbacks :move_absolute do
-              
+               
               object.write_attribute object.parent_id_field, @parent._id
+              object.parent_without_checking = @parent
+
+      
               object.path = @parent.path + [@parent._id]
               object.depth = @parent.depth + 1
-              # only will_save == false will block autosave
-              object.save if will_save != false && object.tree_autosave 
-            
-              delta_depth  = object.depth - prev_depth
-            
-              # get self and all descendants ordered by ascending depth
-              # temporary change tree_order
-              # TODO: Prevent changing tree order because it cause unexpected behaviour
-              prev_order = object.tree_order
-              object.acts_as_tree_options[:order]  = [object.depth_field, :asc]
-                
-              # will not have any children if new record (unsaved parent condition)
-              unless object.new_record?                       
-                object.descendants.each do |c_desc|
-                  # maybe set parent nil, because there will be a lot of queries if there are many children!!
-                  c_desc.run_callbacks :move_relative do
-                    # we need to adapt depth
-                    c_desc.depth  = c_desc.depth + delta_depth
-                    c_desc.path   = c_desc.path.slice(prev_depth, c_desc.path.length - prev_depth).unshift(*object.path)
-                    # only will_save == false will block autosave
-                    c_desc.save! if will_save != false && object.tree_autosave 
-                  end
-                end
-              end
-              
-              # restore old order
-              object.acts_as_tree_options[:order] = prev_order
-              
+                      
               super(object)
+              
             end           
           end
         end
