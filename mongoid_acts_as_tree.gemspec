@@ -45,7 +45,7 @@ Gem::Specification.new do |s|
      "test/test_tree.rb"
   ]
 
-  s.add_runtime_dependency(%q<mongoid>, ["=> 2.0.0"])
+  s.add_runtime_dependency(%q<mongoid>, [">= 2.0.0"])
   s.add_runtime_dependency(%q<bson>, [">= 0.20.1"])
   s.add_development_dependency(%q<shoulda>, [">= 2.10.2"])
 end
