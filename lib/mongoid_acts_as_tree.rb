@@ -20,7 +20,7 @@ module Mongoid
 
           # set order to depth_field as default
           unless options[:order].present?
-            options[:order] = options[:depth_field]
+            options[:order] = [options[:depth_field], :asc]
           end
           
           # setting scope if present
