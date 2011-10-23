@@ -12,10 +12,11 @@ module Mongoid
       module InitializerMethods
         def acts_as_tree(options = {})
           options = {
-            :parent_id_field => "parent_id",
-            :path_field      => "path",
-            :depth_field     => "depth",
-            :autosave       => true
+            :parent_id_field  => "parent_id",   # the field holding the parent_id
+            :path_field       => "path",        # the field holding the path (Array of ObjectIds)
+            :depth_field      => "depth",       # the field holding the depth (Integer)      
+            :base_class       => self,          # the base class if STI is used
+            :autosave         => true           # persist on change?
           }.merge(options)
 
           # set order to depth_field as default
@@ -27,6 +28,11 @@ module Mongoid
           if options[:scope].is_a?(Symbol) && options[:scope].to_s !~ /_id$/
             options[:scope] = "#{options[:scope]}_id".intern
           end
+          
+          # constantize base class if passed as string
+          if options[:base_class].is_a?(String)
+            options[:base_class]  = options[:base_class].constantize!
+          end
 
           write_inheritable_attribute :acts_as_tree_options, options
           class_inheritable_reader :acts_as_tree_options
@@ -35,170 +41,110 @@ module Mongoid
           extend ClassMethods
 
           # build a relation
-          belongs_to  :parent, :class_name => self.base_class.to_s, :foreign_key => parent_id_field, :polymorphic => true
+          belongs_to  :parent, :class_name => self.tree_base_class.to_s, :foreign_key => parent_id_field, :polymorphic => true
+          
+          # build relation to children
+          has_many    :children, 
+                      :class_name => self.tree_base_class.to_s, 
+                      :foreign_key => parent_id_field, 
+                      :order => options[:order]
           
           include InstanceMethods
           include Fields
 
-          field path_field, :type => Array,  :default => [], :index => true
-          field depth_field, :type => Integer, :default => 0                         
           
-          self.class_eval do
-            
-            # overwrite parent_id_field=
-            define_method "#{parent_id_field}=" do | new_parent_id |
-              return if self.send("#{parent_id_field}") == new_parent_id
-              self.parent = new_parent_id.present? ? self.base_class.find(new_parent_id) : nil           
-            end
-            
-            # overwrite parent=
-            def parent_with_checking=(new_parent)    
-              if new_parent.present?
-                # chain to original relation
-                #parent_without_checking=(new_parent)
-                if new_parent != self.parent && new_parent.is_a?(Mongoid::Acts::Tree)
-                  #write_attribute parent_id_field, new_parent.id
-                  #@parent = new_parent
-                  new_parent.children.push self, false
-                end
-              else             
-                # chain to original relation
-                #@parent = nil
-                parent_without_checking=(new_parent)
-                self.write_attribute parent_id_field, nil
-                self.path = []
-                self.depth = 0
-              end
-            end
-
-            # use advise-around pattern to intercept mongoid relation            
-            alias_method_chain  :parent=, :checking
-          end
+          field path_field, :type => Array,  :default => [], :index => true # holds the path
+          field depth_field, :type => Integer, :default => 0  # holds the depth                         
           
-          before_save     :before_save_tree
-          after_save      :after_save_tree
+          # make sure child and parent are in the same scope
+          validate        :validate_scope, :if => :will_move?
+          # detect any cyclic tree structures
+          validate        :validate_cyclic, :if => :will_move?
+          
+          # handle movement 
+          around_save     :handle_move, :if => :will_move?
+          
+          # destroy descendants
           before_destroy  :destroy_descendants
           
-          define_callbacks  :move_absolute, :terminator => "result==false"
-          define_callbacks  :move_relative, :terminator => "result==false"
-          define_callbacks  :unlink, :terminator => "result==false"  
+          # a nice callback 
+          define_callbacks  :move, :terminator => "result==false"
             
         end
       end
 
       module ClassMethods
-        
-        
+        # get all root nodes
         def roots
-          self.where(parent_id_field => nil).order_by tree_order
-        end
-        
-        def base_class
-          _base_class(self)
-        end
-        
-        protected
-        
-        def _base_class(klass)
-          # return if super class is object or does not include Mongoid::Acts::Tree
-          if klass.superclass == Object || !klass.include?(Mongoid::Acts::Tree)
-            klass
-          else
-            _base_class(klass.superclass)
-          end
-        end
-        
-        
+          self.where(parent_id_field => nil)
+        end        
       end
 
       module InstanceMethods        
-        def [](field_name)
-          self.send field_name
-        end
-
-        def []=(field_name, value)
-          self.send "#{field_name}=", value
-        end
-
-        def ==(other)
-          return true if other.equal?(self)
-          return true if other.instance_of?(self.class) and other._id == self._id
-          false
-        end
-
         def root?
           self.parent_id.nil?
         end
 
+        def child?
+          !self.root?
+        end
+
         def root
-          self.root? ? self : self.base_class.find(self.path.first)
+          self.root? ? self : self.tree_scope.find({:_id.in => self.path, :parent_id => nil})
         end
 
         def ancestors
-          self.base_class.where(:_id.in => self.path).order_by tree_order
+          self.tree_scope.where(:_id.in => self.path)
         end
 
         def self_and_ancestors
-          self.base_class.where(:_id.in => [self._id] + self.path).order_by tree_order
+          self.tree_scope.where(:_id.in => [self._id] + self.path)
         end
 
         def siblings
-          self.base_class.where(:_id.ne => self._id, parent_id_field => self.parent_id).order_by tree_order
+          self.tree_scope.where(:_id.ne => self.id, parent_id_field => self.parent_id)
         end
 
         def self_and_siblings
-          self.base_class.where(parent_id_field => self.parent_id).order_by tree_order 
+          self.tree_scope.where(parent_id_field => self.parent_id)
         end
-
-        def children
-          Children.new self
-        end
-
-        def children=(new_children_list)
-          self.children.clear
-          new_children_list.each do | child |
-            self.children << child
-          end
-        end
-
-        alias replace children=
 
         def descendants
-          self.base_class.all_in(path_field => [self._id]).order_by tree_order
+          self.tree_scope.all_in(path_field => [self.id])
         end
 
         def self_and_descendants
           # new query to ensure tree order
-          self.base_class.where({
+          self.tree_scope.where({
             "$or" => [
-                { path_field  => {"$all" => [self._id]}},
-                { :_id        => self._id}
+                { path_field  => {"$all" => [self.id]}},
+                { :_id        => self.id}
               ]
-          }).order_by tree_order
+          })
         end
 
         def is_ancestor_of?(other)
-          other.path.include?(self._id)
+          other.path.include?(self.id) && same_scope?(other)
         end
 
         def is_or_is_ancestor_of?(other)
-          (other == self) or is_ancestor_of?(other)
+          ((other == self) || is_ancestor_of?(other)) && same_scope?(other)
         end
 
         def is_descendant_of?(other)
-          self.path.include?(other._id)
+          self.path.include?(other.id) && same_scope?(other)
         end
 
         def is_or_is_descendant_of?(other)
-          (other == self) or is_descendant_of?(other)
+          ((other == self) || is_descendant_of?(other)) && same_scope?(other)
         end
 
         def is_sibling_of?(other)
-          (other != self) and (other.parent_id == self.parent_id)
+          (other != self) && (other.parent_id == self.parent_id) && same_scope?(other)
         end
 
         def is_or_is_sibling_of?(other)
-          (other == self) or is_sibling_of?(other)
+          ((other == self) || is_sibling_of?(other)) && same_scope?(other)
         end
 
         def destroy_descendants
@@ -206,183 +152,100 @@ module Mongoid
         end
         
         def same_scope?(other)
-          Array(tree_scope).all? do |attr|
-            self.send(attr) == other.send(attr)
+          scope_field_names.all? do |attr|
+            self[attr] == other[attr]
           end
         end        
-        
-        def base_class
-          self.class.base_class
-        end
-                
+                        
         # setter and getters 
         
         def depth
           read_attribute depth_field
         end
+              
+        def path
+          read_attribute path_field
+        end
         
+        # !!!! DO NOT SET DEPTH MANUALY !!!!
         def depth=(new_depth)
           write_attribute depth_field, new_depth
         end
         
-        def path
-          read_attribute path_field
+        # !!!! DO NOT SET PATH MANUALLY !!!!
+        def path=(new_path)
+          write_attribute path_field, new_path
         end
         
         def parent_id
           read_attribute parent_id_field
         end
         
-        # be careful with this one!
-        def path=(new_path)
-          write_attribute path_field, new_path
+        # detect movement
+        # moves if: new record, parent_id has changed        
+        def will_move?
+          !self.persisted? || self.send("#{parent_id_field}_changed?")
+        end
+                        
+        protected
+                
+        def validate_scope
+          # if parent exists, make sure child and parent are in the same scope
+          if !self.root? && !self.same_scope?(self.parent)
+            self.errors.add(:parent_id, 'not in the same scope') 
+          end
+        end
+      
+        def validate_cyclic
+          cyclic = self.persisted? && self.self_and_descendants.where(:_id => self.parent_id).count > 0
+          cyclic = cyclic || (self.parent.present? && self.parent == self) 
+          
+          self.errors.add(:parent_id, 'Cyclic Tree Structure') if cyclic
         end
         
-        def before_save_tree
-          if self.send("#{parent_id_field}_changed?")
-            p "#{self.name} WILL MOVE!!"
-            @_will_move      = true
-            @_old_parent_id  = self.send("#{parent_id_field}_was")
-            @_old_path       = self.send("#{path_field}_was")
-          else
-            @_will_move   = false
-          end
-          
-          return true
-        end
+        
+        def handle_move
+          old_segments  = self.path
+          delta_depth   = self.depth
+          was_persisted = self.persisted?
+                    
+          self.run_callbacks :move do
             
-        def after_save_tree
+            if !self.parent_id.nil? && self.parent.present?
+              self.path   = self.parent.path + [self.parent.id]
+              self.depth  = self.parent.depth + 1
+            else
+              self.path   = []
+              self.depth  = 0
+            end
+            
+            yield
+          
+            # if the node was persisted before it may have children we need to update
+            if was_persisted
+              # delta_depth = current depth - previous depth
+              delta_depth         = self.depth - delta_depth
+              # get the difference of path segments
+              segments_to_delete  = old_segments - self.path
+              # get the difference of path segments the other way around
+              segments_to_insert  = self.path - old_segments
 
-          return unless @_will_move
-          
-          # get self and all descendants ordered by ascending depth
-          # temporary change tree_order
-          # TODO: Prevent changing tree order because it cause unexpected behaviour
-          prev_order = self.tree_order
-          self.acts_as_tree_options[:order]  = [self.depth_field, :asc]
-          
-          prev_depth   = @_old_path.length
-          delta_depth  = self.depth - prev_depth        
-            
-                  
-          self.descendants.each do |c_desc|
-            # maybe set parent nil, because there will be a lot of queries if there are many children!!
-            c_desc.run_callbacks :move_relative do
-              # we need to adapt depth
-              c_desc.depth  = c_desc.depth + delta_depth
-              c_desc.path   = c_desc.path.slice(prev_depth, c_desc.path.length - prev_depth).unshift(*self.path)
-              # only will_save == false will block autosave
-              c_desc.save
+              # 1. pull old elements from path, 
+              self.tree_base_class.collection.update({path_field => {"$all" => [self.id]}}, {'$pullAll' => {"#{path_field}" => segments_to_delete}, "$inc" => {"#{depth_field}" => delta_depth}}, :multi => true)
+              # 2. update set all new elements, if any
+              unless segments_to_insert.empty?
+                self.tree_base_class.collection.update({path_field => {"$all" => [self.id]}}, {'$addToSet' => {"#{path_field}" => segments_to_insert}}, :multi => true)  
+              end
             end
           end
-          
-          # restore old order
-          self.acts_as_tree_options[:order] = prev_order
-          @_old_parent_id  = nil
-          @_old_path       = nil
-          @_will_move      = false
         end
-    
-      end
-
-      #proxy class
-      class Children < Array
-        #TODO: improve accessors to options to eliminate object[object.parent_id_field]
-
-        def initialize(owner)
-          @parent = owner
-          self.concat find_children_for_owner.to_a
-        end
-
-        #Add new child to list of object children
-        def <<(object, will_save=true)
-          # TODO: Ensure integrity (optimistic / custom locking?)
-          if !object.is_a?(Mongoid::Acts::Tree)
-            raise NonTreeError, 'Child is not a kind of Mongoid::Acts::Tree'
-          elsif !@parent.persisted?
-            raise UnsavedParentError, 'Cannot append child to unpersisted parent'
-          elsif object.base_class != @parent.base_class
-            # child and parent must share same base class
-            raise BaseClassError, 'Parent and child must share same base class'
-          elsif !object.new_record? && object.self_and_descendants.include?(@parent)
-            # if record is new, it can't have any children (=> UnsavedParent)
-            raise CyclicError, 'Cyclic Tree Structure'
-          elsif !@parent.same_scope?(object)
-            # child and parent must be within the same scope
-            raise ScopeError, 'Child must be in the same scope as parent'   
-          else
-                                    
-            # 1. parameter = is absolute move ?
-            # 2. parameter = parent         
-            object.run_callbacks :move_absolute do
-               
-              object.write_attribute object.parent_id_field, @parent._id
-              object.parent_without_checking = @parent
-
-      
-              object.path = @parent.path + [@parent._id]
-              object.depth = @parent.depth + 1
-                      
-              super(object)
-              
-            end           
+        
+        def tree_scope(options={})
+          self.tree_base_class.scoped.tap do |new_scope|
+            new_scope.selector.merge!(scope_field_names.inject({}) { |conditions, attr| conditions.merge attr => self[attr] })
+            new_scope.options.merge!({:sort => tree_order}.merge(options))
           end
         end
-
-        def build(attributes, template_class=nil)
-          # use same type as parent
-          template_class = @parent.class if template_class.nil?
-          
-          if !template_class.include?(Mongoid::Acts::Tree)
-            raise template_class.to_s + ' does not include Mongoid::Acts::Tree'
-          end
-          
-          if !(template_class.base_class == @parent.base_class)
-            raise template_class.to_s + ' does not share the same base class as parent'
-          end
-                    
-          child = template_class.new(attributes)
-          
-          self.push child
-          child
-        end
-
-        alias create build
-
-        alias push <<
-
-        #Deletes object only from children list.
-        #To delete object use <tt>object.destroy</tt>.
-        def delete(object_or_id)
-          object = case object_or_id
-            when String, BSON::ObjectId
-              @parent.base_class.find object_or_id
-            else
-              object_or_id
-          end
-
-          object.run_callbacks :unlink do 
-            object.parent = nil
-            object.save if object.tree_autosave
-
-            super(object)
-          end
-        end
-
-        #Clear children list
-        def clear
-          self.each do | child |
-            @parent.children.delete child
-          end
-        end      
-
-        private
-
-        def find_children_for_owner
-          @parent.base_class.where(@parent.parent_id_field => @parent.id).
-            order_by @parent.tree_order
-        end
-          
       end
 
       module Fields
@@ -402,29 +265,18 @@ module Mongoid
           acts_as_tree_options[:order] or []
         end
         
-        def tree_scope
-          acts_as_tree_options[:scope] or nil
+        def scope_field_names
+          Array.wrap(acts_as_tree_options[:scope])
         end        
         
         def tree_autosave
           acts_as_tree_options[:autosave]
         end
         
+        def tree_base_class
+          acts_as_tree_options[:base_class]
+        end
       end
-      
-      class TreeError < StandardError;end
-      
-      class CyclicError < TreeError;end
-      
-      class BaseClassError < TreeError;end
-      
-      class NonTreeError < TreeError; end 
-      
-      class ScopeError < TreeError;end
-      
-      class UnsavedParentError < TreeError;end
-      
     end
   end
 end
-
