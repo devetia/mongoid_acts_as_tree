@@ -14,7 +14,7 @@ module Mongoid
           options = {
             :parent_id_field  => "parent_id",   # the field holding the parent_id
             :path_field       => "path",        # the field holding the path (Array of ObjectIds)
-            :depth_field      => "depth",       # the field holding the depth (Integer)      
+            :depth_field      => "depth",       # the field holding the depth (Integer)
             :base_class       => self,          # the base class if STI is used
             :autosave         => true           # persist on change?
           }.merge(options)
@@ -23,18 +23,20 @@ module Mongoid
           unless options[:order].present?
             options[:order] = [options[:depth_field], :asc]
           end
-          
+
           # setting scope if present
           if options[:scope].is_a?(Symbol) && options[:scope].to_s !~ /_id$/
             options[:scope] = "#{options[:scope]}_id".intern
           end
-          
+
           # constantize base class if passed as string
           if options[:base_class].is_a?(String)
             options[:base_class]  = options[:base_class].constantize!
           end
 
-          write_inheritable_attribute :acts_as_tree_options, options
+          class_attribute :acts_as_tree_options
+          self.acts_as_tree_options = options
+
           class_inheritable_reader :acts_as_tree_options
 
           extend Fields
@@ -42,34 +44,34 @@ module Mongoid
 
           # build a relation
           belongs_to  :parent, :class_name => self.tree_base_class.to_s, :foreign_key => parent_id_field, :polymorphic => true
-          
+
           # build relation to children
-          has_many    :children, 
-                      :class_name => self.tree_base_class.to_s, 
-                      :foreign_key => parent_id_field, 
+          has_many    :children,
+                      :class_name => self.tree_base_class.to_s,
+                      :foreign_key => parent_id_field,
                       :order => options[:order]
-          
+
           include InstanceMethods
           include Fields
 
-          
+
           field path_field, :type => Array,  :default => [], :index => true # holds the path
-          field depth_field, :type => Integer, :default => 0  # holds the depth                         
-          
+          field depth_field, :type => Integer, :default => 0  # holds the depth
+
           # make sure child and parent are in the same scope
           validate        :validate_scope, :if => :will_move?
           # detect any cyclic tree structures
           validate        :validate_cyclic, :if => :will_move?
-          
-          # handle movement 
+
+          # handle movement
           around_save     :handle_move, :if => :will_move?
-          
+
           # destroy descendants
           before_destroy  :destroy_descendants
-          
-          # a nice callback 
+
+          # a nice callback
           define_callbacks  :move, :terminator => "result==false"
-            
+
         end
       end
 
@@ -77,10 +79,10 @@ module Mongoid
         # get all root nodes
         def roots
           self.where(parent_id_field => nil)
-        end        
+        end
       end
 
-      module InstanceMethods        
+      module InstanceMethods
         def root?
           self.parent_id.nil?
         end
@@ -150,67 +152,67 @@ module Mongoid
         def destroy_descendants
           self.descendants.each &:destroy
         end
-        
+
         def same_scope?(other)
           scope_field_names.all? do |attr|
             self[attr] == other[attr]
           end
-        end        
-                        
-        # setter and getters 
-        
+        end
+
+        # setter and getters
+
         def depth
           read_attribute depth_field
         end
-              
+
         def path
           read_attribute path_field
         end
-        
+
         # !!!! DO NOT SET DEPTH MANUALY !!!!
         def depth=(new_depth)
           write_attribute depth_field, new_depth
         end
-        
+
         # !!!! DO NOT SET PATH MANUALLY !!!!
         def path=(new_path)
           write_attribute path_field, new_path
         end
-        
+
         def parent_id
           read_attribute parent_id_field
         end
-        
+
         # detect movement
-        # moves if: new record, parent_id has changed        
+        # moves if: new record, parent_id has changed
         def will_move?
           !self.persisted? || self.send("#{parent_id_field}_changed?")
         end
-                        
+
         protected
-                
+
         def validate_scope
           # if parent exists, make sure child and parent are in the same scope
           if !self.root? && !self.same_scope?(self.parent)
-            self.errors.add(:parent_id, 'not in the same scope') 
+            self.errors.add(:parent_id, 'not in the same scope')
           end
         end
-      
+
         def validate_cyclic
           cyclic = self.persisted? && self.self_and_descendants.where(:_id => self.parent_id).count > 0
-          cyclic = cyclic || (self.parent.present? && self.parent == self) 
-          
+          cyclic = cyclic || (self.parent.present? && self.parent == self)
+
           self.errors.add(:parent_id, 'Cyclic Tree Structure') if cyclic
         end
-        
-        
+
+
         def handle_move
           old_segments  = self.path
           delta_depth   = self.depth
           was_persisted = self.persisted?
-                    
+
           self.run_callbacks :move do
-            
+
             if !self.parent_id.nil? && self.parent.present?
               self.path   = self.parent.path + [self.parent.id]
               self.depth  = self.parent.depth + 1
@@ -218,9 +220,9 @@ module Mongoid
               self.path   = []
               self.depth  = 0
             end
-            
+
             yield
-          
+
             # if the node was persisted before it may have children we need to update
             if was_persisted
               # delta_depth = current depth - previous depth
@@ -230,16 +232,16 @@ module Mongoid
               # get the difference of path segments the other way around
               segments_to_insert  = self.path - old_segments
 
-              # 1. pull old elements from path, 
+              # 1. pull old elements from path,
               self.tree_base_class.collection.update({path_field => {"$all" => [self.id]}}, {'$pullAll' => {"#{path_field}" => segments_to_delete}, "$inc" => {"#{depth_field}" => delta_depth}}, :multi => true)
               # 2. update set all new elements, if any
               unless segments_to_insert.empty?
-                self.tree_base_class.collection.update({path_field => {"$all" => [self.id]}}, {'$addToSet' => {"#{path_field}" => segments_to_insert}}, :multi => true)  
+                self.tree_base_class.collection.update({path_field => {"$all" => [self.id]}}, {'$addToSet' => {"#{path_field}" => segments_to_insert}}, :multi => true)
               end
             end
           end
         end
-        
+
         def tree_scope(options={})
           self.tree_base_class.scoped.tap do |new_scope|
             new_scope.selector.merge!(scope_field_names.inject({}) { |conditions, attr| conditions.merge attr => self[attr] })
@@ -264,15 +266,15 @@ module Mongoid
         def tree_order
           acts_as_tree_options[:order] or []
         end
-        
+
         def scope_field_names
           Array.wrap(acts_as_tree_options[:scope])
-        end        
-        
+        end
+
         def tree_autosave
           acts_as_tree_options[:autosave]
         end
-        
+
         def tree_base_class
           acts_as_tree_options[:base_class]
         end
