@@ -37,8 +37,6 @@ module Mongoid
           class_attribute :acts_as_tree_options
           self.acts_as_tree_options = options
 
-          class_inheritable_reader :acts_as_tree_options
-
           extend Fields
           extend ClassMethods
 
